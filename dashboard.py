@@ -49,7 +49,7 @@ st.markdown("""
 # --- INICIALIZACIÓN DEL ESTADO DE LA SESIÓN Y OBJETIVOS ---
 def initialize_state():
     cols_q1_q4 = ['Vial', 'Levantamiento (m)']
-    cols_q2_q3 = ['Descripción', 'Tipo', 'Valor', 'Localización', 'Georadar', 'Levantamiento']
+    cols_q2_q3 = ['Descripción', 'Tipo', 'Tarea', 'Cantidad'] # Nueva estructura de datos unificada
     if 'df_q1' not in st.session_state: st.session_state.df_q1 = pd.DataFrame(columns=cols_q1_q4)
     if 'df_q2' not in st.session_state: st.session_state.df_q2 = pd.DataFrame(columns=cols_q2_q3)
     if 'df_q3' not in st.session_state: st.session_state.df_q3 = pd.DataFrame(columns=cols_q2_q3)
@@ -102,18 +102,21 @@ def safe_sum_numeric_column(df, column_name):
 # CÁLCULOS POR CUADRANTE
 vias_q1 = safe_sum_numeric_column(st.session_state.df_q1, 'Levantamiento (m)')
 vias_q4 = safe_sum_numeric_column(st.session_state.df_q4, 'Levantamiento (m)')
-vias_q2 = safe_sum_numeric_column(st.session_state.df_q2[st.session_state.df_q2['Tipo'] == 'Vía'], 'Valor')
-vias_q3 = safe_sum_numeric_column(st.session_state.df_q3[st.session_state.df_q3['Tipo'] == 'Vía'], 'Valor')
 
-interf_q2_df = st.session_state.df_q2[st.session_state.df_q2['Tipo'] == 'Interferencia']
-localizacion_q2 = safe_sum_numeric_column(interf_q2_df, 'Localización')
-georadar_q2 = safe_sum_numeric_column(interf_q2_df, 'Georadar')
-levantamiento_q2 = safe_sum_numeric_column(interf_q2_df, 'Levantamiento')
+df_vias_q2 = st.session_state.df_q2[st.session_state.df_q2['Tipo'] == 'Vía y Drenajes']
+vias_q2 = safe_sum_numeric_column(df_vias_q2, 'Cantidad')
+df_vias_q3 = st.session_state.df_q3[st.session_state.df_q3['Tipo'] == 'Vía y Drenajes']
+vias_q3 = safe_sum_numeric_column(df_vias_q3, 'Cantidad')
 
-interf_q3_df = st.session_state.df_q3[st.session_state.df_q3['Tipo'] == 'Interferencia']
-localizacion_q3 = safe_sum_numeric_column(interf_q3_df, 'Localización')
-georadar_q3 = safe_sum_numeric_column(interf_q3_df, 'Georadar')
-levantamiento_q3 = safe_sum_numeric_column(interf_q3_df, 'Levantamiento')
+df_interf_q2 = st.session_state.df_q2[st.session_state.df_q2['Tipo'] == 'Interferencia']
+localizacion_q2 = safe_sum_numeric_column(df_interf_q2[df_interf_q2['Tarea'] == 'Localización'], 'Cantidad')
+georadar_q2 = safe_sum_numeric_column(df_interf_q2[df_interf_q2['Tarea'] == 'Georadar'], 'Cantidad')
+levantamiento_q2 = safe_sum_numeric_column(df_interf_q2[df_interf_q2['Tarea'] == 'Levantamiento'], 'Cantidad')
+
+df_interf_q3 = st.session_state.df_q3[st.session_state.df_q3['Tipo'] == 'Interferencia']
+localizacion_q3 = safe_sum_numeric_column(df_interf_q3[df_interf_q3['Tarea'] == 'Localización'], 'Cantidad')
+georadar_q3 = safe_sum_numeric_column(df_interf_q3[df_interf_q3['Tarea'] == 'Georadar'], 'Cantidad')
+levantamiento_q3 = safe_sum_numeric_column(df_interf_q3[df_interf_q3['Tarea'] == 'Levantamiento'], 'Cantidad')
 
 # CÁLCULOS TOTALES (SUMA DE CUADRANTES)
 vias_levantadas_total = vias_q1 + vias_q2 + vias_q3 + vias_q4
@@ -197,95 +200,57 @@ with c1:
         with st.expander("Ver/Editar Datos de Cuadrante 1"):
             st.data_editor(st.session_state.df_q1, num_rows="dynamic", use_container_width=True, key="editor_q1")
 
+def render_unified_quadrant(quadrant_num, df_key, vias_progress, levantamiento_progress, vias_obj, interf_obj):
+    st.subheader(f"⚡ Cuadrante {quadrant_num}")
+    chart_cols = st.columns(2)
+    with chart_cols[0]:
+        st.plotly_chart(create_donut_chart(vias_progress, vias_obj, f"Vías y Drenajes {' ' * quadrant_num}"), use_container_width=True)
+        st.info(f"**Vías:** `{int(vias_progress)} / {vias_obj} m`")
+    with chart_cols[1]:
+        st.plotly_chart(create_donut_chart(levantamiento_progress, interf_obj, f"Interferencias {' ' * quadrant_num}"), use_container_width=True)
+        st.info(f"**Interferencias:** `{int(levantamiento_progress)} / {interf_obj}`")
+    
+    with st.form(key=f"form_q{quadrant_num}"):
+        st.write("**Agregar Nuevo Registro**")
+        tipo = st.selectbox("Tipo de Registro", ["Vía y Drenajes", "Interferencia"], key=f"tipo_q{quadrant_num}")
+        descripcion = st.text_input("Descripción (Nombre, ID, etc.)", key=f"desc_q{quadrant_num}")
+        
+        if tipo == "Interferencia":
+            tarea = st.selectbox("Tarea de Interferencia", ["Localización", "Georadar", "Levantamiento"], key=f"tarea_q{quadrant_num}")
+            cantidad = st.number_input("Cantidad de Puntos", min_value=1, step=1, key=f"cant_interf_q{quadrant_num}")
+        else: # Vía y Drenajes
+            tarea = "Vías y Drenajes"
+            cantidad = st.number_input("Metros Levantados", min_value=0.0, format="%.2f", key=f"cant_via_q{quadrant_num}")
+
+        if st.form_submit_button("✅ Guardar", use_container_width=True):
+            if descripcion:
+                new_row = {'Descripción': descripcion, 'Tipo': tipo, 'Tarea': tarea, 'Cantidad': cantidad}
+                st.session_state[df_key] = pd.concat([st.session_state[df_key], pd.DataFrame([new_row])], ignore_index=True)
+                st.toast(f"¡Registro guardado en Cuadrante {quadrant_num}!")
+                st.rerun()
+    with st.expander(f"Ver/Editar Datos de Cuadrante {quadrant_num}"):
+        st.data_editor(st.session_state[df_key], num_rows="dynamic", use_container_width=True, key=f"editor_q{quadrant_num}")
+
 with c2:
     with st.container(border=True):
-        st.subheader("⚡ Cuadrante 2")
-        vias_obj_q2 = st.session_state.objetivos_cuadrante['Q2']['vias']
-        interf_obj_q2 = st.session_state.objetivos_cuadrante['Q2']['interferencias']
+        render_unified_quadrant(2, 'df_q2', vias_q2, levantamiento_q2, 
+                                st.session_state.objetivos_cuadrante['Q2']['vias'], 
+                                st.session_state.objetivos_cuadrante['Q2']['interferencias'])
         
-        chart_cols = st.columns(2)
-        with chart_cols[0]:
-            st.plotly_chart(create_donut_chart(vias_q2, vias_obj_q2, "Vías y Drenajes"), use_container_width=True)
-            st.info(f"**Vías:** `{int(vias_q2)} / {vias_obj_q2} m`")
-        with chart_cols[1]:
-            st.plotly_chart(create_donut_chart(levantamiento_q2, interf_obj_q2, "Interferencias"), use_container_width=True)
-            st.info(f"**Interferencias:** `{int(levantamiento_q2)} / {interf_obj_q2}`")
-        
-        with st.form(key="form_via_q2"):
-            st.write("**Agregar Vía**")
-            descripcion = st.text_input("Descripción de la Vía", key="desc_via_q2")
-            valor = st.number_input("Metros Levantados", min_value=0.0, format="%.2f", key="val_via_q2")
-            if st.form_submit_button("✅ Guardar", use_container_width=True):
-                if descripcion:
-                    new_row = {'Descripción': descripcion, 'Tipo': 'Vía', 'Valor': valor, 'Localización': None, 'Georadar': None, 'Levantamiento': None}
-                    st.session_state.df_q2 = pd.concat([st.session_state.df_q2, pd.DataFrame([new_row])], ignore_index=True)
-                    st.toast("¡Vía guardada en Cuadrante 2!")
-                    st.rerun()
-        with st.form(key="form_interf_q2"):
-            st.write("**Agregar Interferencia**")
-            descripcion = st.text_input("ID o Descripción", key="desc_interf_q2")
-            check_cols = st.columns(3)
-            loc = check_cols[0].checkbox("Localización", key="loc_q2")
-            geo = check_cols[1].checkbox("Georadar", key="geo_q2")
-            lev = check_cols[2].checkbox("Levantamiento", key="lev_q2")
-            if st.form_submit_button("✅ Guardar", use_container_width=True):
-                if descripcion:
-                    new_row = {'Descripción': descripcion, 'Tipo': 'Interferencia', 'Valor': 1, 'Localización': loc, 'Georadar': geo, 'Levantamiento': lev}
-                    st.session_state.df_q2 = pd.concat([st.session_state.df_q2, pd.DataFrame([new_row])], ignore_index=True)
-                    st.toast("¡Interferencia guardada en Cuadrante 2!")
-                    st.rerun()
-        with st.expander("Ver/Editar Datos de Cuadrante 2"):
-            st.data_editor(st.session_state.df_q2, num_rows="dynamic", use_container_width=True, key="editor_q2")
-
 st.markdown("<br>", unsafe_allow_html=True)
 
 c3, c4 = st.columns(2, gap="large")
 with c3:
     with st.container(border=True):
-        st.subheader("⚡ Cuadrante 3")
-        vias_obj_q3 = st.session_state.objetivos_cuadrante['Q3']['vias']
-        interf_obj_q3 = st.session_state.objetivos_cuadrante['Q3']['interferencias']
-        
-        chart_cols = st.columns(2)
-        with chart_cols[0]:
-            st.plotly_chart(create_donut_chart(vias_q3, vias_obj_q3, "Vías y Drenajes "), use_container_width=True)
-            st.info(f"**Vías:** `{int(vias_q3)} / {vias_obj_q3} m`")
-        with chart_cols[1]:
-            st.plotly_chart(create_donut_chart(levantamiento_q3, interf_obj_q3, "Interferencias "), use_container_width=True)
-            st.info(f"**Interferencias:** `{int(levantamiento_q3)} / {interf_obj_q3}`")
-
-        with st.form(key="form_via_q3"):
-            st.write("**Agregar Vía**")
-            descripcion = st.text_input("Descripción de la Vía", key="desc_via_q3")
-            valor = st.number_input("Metros Levantados", min_value=0.0, format="%.2f", key="val_via_q3")
-            if st.form_submit_button("✅ Guardar", use_container_width=True):
-                if descripcion:
-                    new_row = {'Descripción': descripcion, 'Tipo': 'Vía', 'Valor': valor, 'Localización': None, 'Georadar': None, 'Levantamiento': None}
-                    st.session_state.df_q3 = pd.concat([st.session_state.df_q3, pd.DataFrame([new_row])], ignore_index=True)
-                    st.toast("¡Vía guardada en Cuadrante 3!")
-                    st.rerun()
-        with st.form(key="form_interf_q3"):
-            st.write("**Agregar Interferencia**")
-            descripcion = st.text_input("ID o Descripción", key="desc_interf_q3")
-            check_cols = st.columns(3)
-            loc = check_cols[0].checkbox("Localización", key="loc_q3")
-            geo = check_cols[1].checkbox("Georadar", key="geo_q3")
-            lev = check_cols[2].checkbox("Levantamiento", key="lev_q3")
-            if st.form_submit_button("✅ Guardar", use_container_width=True):
-                if descripcion:
-                    new_row = {'Descripción': descripcion, 'Tipo': 'Interferencia', 'Valor': 1, 'Localización': loc, 'Georadar': geo, 'Levantamiento': lev}
-                    st.session_state.df_q3 = pd.concat([st.session_state.df_q3, pd.DataFrame([new_row])], ignore_index=True)
-                    st.toast("¡Interferencia guardada en Cuadrante 3!")
-                    st.rerun()
-        with st.expander("Ver/Editar Datos de Cuadrante 3"):
-            st.data_editor(st.session_state.df_q3, num_rows="dynamic", use_container_width=True, key="editor_q3")
+        render_unified_quadrant(3, 'df_q3', vias_q3, levantamiento_q3, 
+                                st.session_state.objetivos_cuadrante['Q3']['vias'], 
+                                st.session_state.objetivos_cuadrante['Q3']['interferencias'])
 
 with c4:
     with st.container(border=True):
         st.subheader("📍 Cuadrante 4")
         vias_obj_q4 = st.session_state.objetivos_cuadrante['Q4']['vias']
-        # FIX: Added a space to the title to make it unique from Quadrant 1's chart
-        st.plotly_chart(create_donut_chart(vias_q4, vias_obj_q4, "Avance de Vías y Drenajes "), use_container_width=True)
+        st.plotly_chart(create_donut_chart(vias_q4, vias_obj_q4, "Avance de Vías y Drenajes  "), use_container_width=True)
         st.info(f"**Progreso:** `{int(vias_q4)} / {vias_obj_q4} m`")
 
         with st.form(key="form_q4"):
@@ -300,4 +265,3 @@ with c4:
                     st.rerun()
         with st.expander("Ver/Editar Datos de Cuadrante 4"):
             st.data_editor(st.session_state.df_q4, num_rows="dynamic", use_container_width=True, key="editor_q4")
-
