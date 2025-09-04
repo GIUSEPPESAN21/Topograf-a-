@@ -1,150 +1,179 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import io
+import zipfile
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
-    page_title="Gestor de Topografía",
-    page_icon="🏗️",
+    page_title="Control de Topografía",
+    page_icon="🚧",
     layout="wide"
 )
 
+# --- ESTILOS CSS PARA MEJORAR LA INTERFAZ ---
+st.markdown("""
+<style>
+    .stApp {
+        background-color: #F0F2F6;
+    }
+    .st-emotion-cache-16txtl3 {
+        padding: 1rem 2rem;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 24px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: #FFFFFF;
+        border-radius: 4px 4px 0px 0px;
+        gap: 1px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #0072C6;
+        color: white;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
 # --- INICIALIZACIÓN DEL ESTADO DE LA SESIÓN ---
-# Esto es crucial para guardar los datos mientras usas la app.
-def initialize_session_state():
-    """Crea DataFrames vacíos en el estado de la sesión si no existen."""
+def initialize_state():
+    """Inicializa los DataFrames en el estado de la sesión si no existen."""
     if 'df_q1' not in st.session_state:
-        st.session_state.df_q1 = pd.DataFrame(columns=['Vial', 'Levantamiento_m']).astype({'Levantamiento_m': 'float64'})
+        st.session_state.df_q1 = pd.DataFrame(columns=['Vial', 'Levantamiento (m)'])
     if 'df_q2' not in st.session_state:
-        st.session_state.df_q2 = pd.DataFrame(columns=['Subcampo', 'Interferencia', 'Tension', 'Localizacion', 'Georradar', 'Levantamiento'])
+        st.session_state.df_q2 = pd.DataFrame(columns=['Subcampo', 'Interferencia', 'Tensión', 'Localización', 'Georradar', 'Levantamiento'])
     if 'df_q3' not in st.session_state:
-        st.session_state.df_q3 = pd.DataFrame(columns=['Subcampo', 'Interferencia', 'Tension', 'Localizacion', 'Georradar', 'Levantamiento'])
+        st.session_state.df_q3 = pd.DataFrame(columns=['Subcampo', 'Interferencia', 'Tensión', 'Localización', 'Georradar', 'Levantamiento'])
     if 'df_q4' not in st.session_state:
-        st.session_state.df_q4 = pd.DataFrame(columns=['Vial', 'Levantamiento_m']).astype({'Levantamiento_m': 'float64'})
+        st.session_state.df_q4 = pd.DataFrame(columns=['Vial', 'Levantamiento (m)'])
 
-initialize_session_state()
+initialize_state()
 
-# --- TÍTULO Y ENCABEZADO ---
-st.title("🏗️ Gestor de Avance de Topografía")
-st.markdown("### **Proyecto:** GUAYEPO I & II")
-
-# --- BARRA LATERAL PARA SELECCIÓN DE MODO ---
+# --- BARRA LATERAL ---
 with st.sidebar:
-    st.image("https://i.imgur.com/v8pZ4Jp.png", width=120)
-    st.header("Configuración")
-    mode = st.radio(
-        "Elige el modo de ingreso de datos:",
-        ("Ingreso Manual", "Cargar Archivos CSV")
+    st.image("https://i.imgur.com/b2d5kSg.png", width=150)
+    st.title("Panel de Control")
+    st.markdown("---")
+    
+    st.header("Guardar Progreso")
+    st.info("Guarda todos los datos de los 4 cuadrantes en un archivo .zip.")
+    
+    # Crear un archivo zip en memoria
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+        for i in range(1, 5):
+            df_key = f'df_q{i}'
+            if not st.session_state[df_key].empty:
+                csv_buffer = st.session_state[df_key].to_csv(index=False, sep=';').encode()
+                zip_file.writestr(f'cuadrante_{i}.csv', csv_buffer)
+
+    st.download_button(
+        label="📥 Descargar Datos",
+        data=zip_buffer.getvalue(),
+        file_name="progreso_topografia.zip",
+        mime="application/zip",
+        use_container_width=True
     )
-    st.info("💡 Tus datos se guardan temporalmente. Si recargas la página, los cambios se perderán en modo manual.")
+    
+    st.markdown("---")
+    st.header("Cargar Progreso")
+    uploaded_zip = st.file_uploader("Sube un archivo .zip para restaurar los datos.", type="zip")
+    if uploaded_zip:
+        with zipfile.ZipFile(uploaded_zip, 'r') as z:
+            for i in range(1, 5):
+                try:
+                    with z.open(f'cuadrante_{i}.csv') as f:
+                        st.session_state[f'df_q{i}'] = pd.read_csv(f, sep=';')
+                except KeyError:
+                    st.error(f"El archivo 'cuadrante_{i}.csv' no se encontró en el .zip.")
+        st.success("¡Datos restaurados con éxito!")
 
-# --- LÓGICA DE INGRESO DE DATOS ---
-if mode == "Cargar Archivos CSV":
-    st.sidebar.header("Cargar Archivos")
-    uploaded_files = st.sidebar.file_uploader(
-        "Sube los 4 archivos CSV (delimitados por ';')", 
-        accept_multiple_files=True, 
-        type="csv"
-    )
-    if uploaded_files and len(uploaded_files) == 4:
-        try:
-            for file in uploaded_files:
-                if "1" in file.name:
-                    df1 = pd.read_csv(file, sep=';', skiprows=7)
-                    df1.columns = ['Cuadrante_raw', 'Vial', 'Levantamiento_m', 'Dibujo', 'As_Built']
-                    st.session_state.df_q1 = df1[['Vial', 'Levantamiento_m']].dropna(subset=['Vial'])
-                    st.session_state.df_q1 = st.session_state.df_q1[st.session_state.df_q1['Vial'] != 'TOTAL']
-                elif "2" in file.name:
-                    df2 = pd.read_csv(file, sep=';', skiprows=7)
-                    df2.columns = ['Cuadrante_raw', 'Subcampo', 'Interferencia', 'Tension', 'Localizacion', 'Georradar', 'Levantamiento']
-                    st.session_state.df_q2 = df2[['Subcampo', 'Interferencia', 'Tension', 'Localizacion', 'Georradar', 'Levantamiento']]
-                    st.session_state.df_q2[['Subcampo']] = st.session_state.df_q2[['Subcampo']].ffill()
-                elif "3" in file.name:
-                    df3 = pd.read_csv(file, sep=';', skiprows=7)
-                    df3.columns = ['Cuadrante_raw', 'Subcampo', 'Interferencia', 'Tension', 'Localizacion', 'Georradar', 'Levantamiento']
-                    st.session_state.df_q3 = df3[['Subcampo', 'Interferencia', 'Tension', 'Localizacion', 'Georradar', 'Levantamiento']]
-                    st.session_state.df_q3[['Subcampo']] = st.session_state.df_q3[['Subcampo']].ffill()
-                elif "4" in file.name:
-                    df4 = pd.read_csv(file, sep=';', skiprows=7)
-                    df4.columns = ['Cuadrante_raw', 'Vial', 'Levantamiento_m', 'Dibujo', 'As_Built']
-                    st.session_state.df_q4 = df4[['Vial', 'Levantamiento_m']].dropna(subset=['Vial'])
-                    st.session_state.df_q4 = st.session_state.df_q4[st.session_state.df_q4['Vial'] != 'TOTAL']
-            
-            # Limpiar NaNs de columnas importantes
-            for df_key in ['df_q1', 'df_q2', 'df_q3', 'df_q4']:
-                st.session_state[df_key].dropna(subset=st.session_state[df_key].columns[0], inplace=True)
-
-            st.sidebar.success("¡Archivos cargados y procesados correctamente!")
-        except Exception as e:
-            st.sidebar.error(f"Error al procesar los archivos: {e}. Asegúrate que tengan el formato correcto.")
-
-# --- SECCIONES DE EDICIÓN MANUAL ---
+# --- TÍTULO PRINCIPAL ---
+st.title("🚧 Gestor de Avance de Topografía")
+st.markdown("### **Proyecto:** GUAYEPO I & II")
 st.markdown("---")
-st.header("Tablas de Datos por Cuadrante")
 
-# Cuadrantes de Vías
-col_vias1, col_vias2 = st.columns(2)
-with col_vias1:
-    with st.expander("📍 Cuadrante 1: Topografía de Vías", expanded=(mode=="Ingreso Manual")):
-        st.write("Agrega o edita los datos de las vías.")
-        st.session_state.df_q1 = st.data_editor(st.session_state.df_q1, num_rows="dynamic", key="editor_q1")
-with col_vias2:
-    with st.expander("📍 Cuadrante 4: Topografía de Vías", expanded=(mode=="Ingreso Manual")):
-        st.write("Agrega o edita los datos de las vías.")
-        st.session_state.df_q4 = st.data_editor(st.session_state.df_q4, num_rows="dynamic", key="editor_q4")
-
-# Cuadrantes de Interferencias
-col_int1, col_int2 = st.columns(2)
-with col_int1:
-    with st.expander("⚡ Cuadrante 2: Interferencias", expanded=(mode=="Ingreso Manual")):
-        st.write("Agrega o edita los datos de interferencias.")
-        st.session_state.df_q2 = st.data_editor(st.session_state.df_q2, num_rows="dynamic", key="editor_q2")
-with col_int2:
-    with st.expander("⚡ Cuadrante 3: Interferencias", expanded=(mode=="Ingreso Manual")):
-        st.write("Agrega o edita los datos de interferencias.")
-        st.session_state.df_q3 = st.data_editor(st.session_state.df_q3, num_rows="dynamic", key="editor_q3")
-
-
-# --- DASHBOARD DE VISUALIZACIÓN ---
-st.markdown("---")
+# --- DASHBOARD DE RESUMEN ---
 st.header("Dashboard de Avance General")
 
-# Convertir a numérico para evitar errores en los cálculos
-st.session_state.df_q1['Levantamiento_m'] = pd.to_numeric(st.session_state.df_q1['Levantamiento_m'], errors='coerce').fillna(0)
-st.session_state.df_q4['Levantamiento_m'] = pd.to_numeric(st.session_state.df_q4['Levantamiento_m'], errors='coerce').fillna(0)
-
-# Lógica para el resumen general
+# Lógica de cálculo
 total_vias_objetivo = 31588
-vias_levantadas = st.session_state.df_q1['Levantamiento_m'].sum() + st.session_state.df_q4['Levantamiento_m'].sum()
+df_q1_numeric = pd.to_numeric(st.session_state.df_q1['Levantamiento (m)'], errors='coerce').fillna(0)
+df_q4_numeric = pd.to_numeric(st.session_state.df_q4['Levantamiento (m)'], errors='coerce').fillna(0)
+vias_levantadas = df_q1_numeric.sum() + df_q4_numeric.sum()
 porcentaje_vias = (vias_levantadas / total_vias_objetivo) if total_vias_objetivo > 0 else 0
 
 total_interferencias = len(st.session_state.df_q2) + len(st.session_state.df_q3)
 interferencias_completadas = st.session_state.df_q2['Levantamiento'].notna().sum() + st.session_state.df_q3['Levantamiento'].notna().sum()
 porcentaje_interferencias = (interferencias_completadas / total_interferencias) if total_interferencias > 0 else 0
 
-# Mostrar resumen general
 if vias_levantadas == 0 and total_interferencias == 0:
-    st.info("Aún no hay datos para mostrar en el dashboard. Ingresa datos o carga archivos para comenzar.")
+    st.info("Aún no hay datos para mostrar. Ingresa registros en las pestañas de abajo para comenzar.")
 else:
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3 = st.columns(3, gap="large")
     col1.metric("Avance de Vías (Metros)", f"{int(vias_levantadas):,} / {total_vias_objetivo:,} m", f"{porcentaje_vias:.1%} Progreso")
     col2.metric("Avance de Interferencias", f"{interferencias_completadas} / {total_interferencias}", f"{porcentaje_interferencias:.1%} Progreso")
 
     if total_interferencias > 0:
         df_interferencias_total = pd.concat([st.session_state.df_q2, st.session_state.df_q3])
-        tension_counts = df_interferencias_total['Tension'].value_counts().reset_index()
-        tension_counts.columns = ['Tension', 'Cantidad']
-        fig_pie = px.pie(tension_counts, names='Tension', values='Cantidad', title='Distribución por Tensión', color_discrete_sequence=px.colors.qualitative.Pastel)
+        tension_counts = df_interferencias_total['Tensión'].value_counts().reset_index()
+        fig_pie = px.pie(tension_counts, names='Tensión', values='count', title='Distribución por Tensión', color_discrete_sequence=px.colors.qualitative.Pastel)
         col3.plotly_chart(fig_pie, use_container_width=True)
 
-    # Gráficos de barras para Vías
-    st.markdown("#### Progreso por Vial")
-    c_vias1, c_vias2 = st.columns(2)
-    with c_vias1:
-        if not st.session_state.df_q1.empty:
-            fig1 = px.bar(st.session_state.df_q1, x='Vial', y='Levantamiento_m', title='Cuadrante 1', text_auto=True)
-            st.plotly_chart(fig1, use_container_width=True)
-    with c_vias2:
-        if not st.session_state.df_q4.empty:
-            fig4 = px.bar(st.session_state.df_q4, x='Vial', y='Levantamiento_m', title='Cuadrante 4', text_auto=True)
-            st.plotly_chart(fig4, use_container_width=True)
+st.markdown("---")
+st.header("Gestión de Datos por Cuadrante")
+
+# --- PESTAÑAS PARA CADA CUADRANTE ---
+tab1, tab2, tab3, tab4 = st.tabs(["📍 Cuadrante 1", "⚡ Cuadrante 2", "⚡ Cuadrante 3", "📍 Cuadrante 4"])
+
+# --- Lógica para Cuadrantes de Vías (1 y 4) ---
+def render_vias_tab(tab, df_key, cuadrante_num):
+    with tab:
+        st.subheader(f"Formulario de Ingreso - Cuadrante {cuadrante_num}")
+        with st.form(key=f"form_q{cuadrante_num}", clear_on_submit=True):
+            col_form1, col_form2 = st.columns(2)
+            vial = col_form1.text_input("Nombre del Vial (Ej: VIAL 1)")
+            metros = col_form2.number_input("Metros Levantados", min_value=0.0, format="%.2f")
+            submitted = st.form_submit_button("➕ Agregar Registro")
+            if submitted and vial:
+                new_data = pd.DataFrame([{'Vial': vial, 'Levantamiento (m)': metros}])
+                st.session_state[df_key] = pd.concat([st.session_state[df_key], new_data], ignore_index=True)
+                st.success(f"¡Vial '{vial}' agregado al Cuadrante {cuadrante_num}!")
+
+        st.subheader(f"Datos Registrados - Cuadrante {cuadrante_num}")
+        st.data_editor(st.session_state[df_key], num_rows="dynamic", use_container_width=True, key=f"editor_q{cuadrante_num}")
+
+# --- Lógica para Cuadrantes de Interferencias (2 y 3) ---
+def render_interferencias_tab(tab, df_key, cuadrante_num):
+    with tab:
+        st.subheader(f"Formulario de Ingreso - Cuadrante {cuadrante_num}")
+        with st.form(key=f"form_q{cuadrante_num}", clear_on_submit=True):
+            c1, c2, c3 = st.columns(3)
+            subcampo = c1.text_input("Subcampo")
+            interferencia = c2.text_input("Interferencia")
+            tension = c3.selectbox("Tensión", ["Baja", "Media", "Otra"])
+            c4, c5, c6 = st.columns(3)
+            localizacion = c4.text_input("Localización (Ej: OK, fecha)")
+            georradar = c5.text_input("Georradar (Ej: OK, fecha)")
+            levantamiento = c6.text_input("Levantamiento (Ej: OK, fecha)")
+            submitted = st.form_submit_button("➕ Agregar Registro")
+            if submitted and subcampo and interferencia:
+                new_data = pd.DataFrame([{'Subcampo': subcampo, 'Interferencia': interferencia, 'Tensión': tension, 'Localización': localizacion, 'Georradar': georradar, 'Levantamiento': levantamiento}])
+                st.session_state[df_key] = pd.concat([st.session_state[df_key], new_data], ignore_index=True)
+                st.success(f"¡Interferencia '{interferencia}' agregada al Cuadrante {cuadrante_num}!")
+
+        st.subheader(f"Datos Registrados - Cuadrante {cuadrante_num}")
+        st.data_editor(st.session_state[df_key], num_rows="dynamic", use_container_width=True, key=f"editor_q{cuadrante_num}")
+
+
+# Renderizar cada pestaña
+render_vias_tab(tab1, 'df_q1', 1)
+render_interferencias_tab(tab2, 'df_q2', 2)
+render_interferencias_tab(tab3, 'df_q3', 3)
+render_vias_tab(tab4, 'df_q4', 4)
+
