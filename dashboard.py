@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import io
 import zipfile
 
@@ -61,9 +60,9 @@ def initialize_state():
     if 'df_q1' not in st.session_state:
         st.session_state.df_q1 = pd.DataFrame(columns=['Vial', 'Levantamiento (m)'])
     if 'df_q2' not in st.session_state:
-        st.session_state.df_q2 = pd.DataFrame(columns=['Subcampo', 'Interferencia', 'Tensión', 'Localización', 'Georradar', 'Levantamiento'])
+        st.session_state.df_q2 = pd.DataFrame(columns=['Descripción', 'Tipo', 'Valor']) # Estructura simplificada
     if 'df_q3' not in st.session_state:
-        st.session_state.df_q3 = pd.DataFrame(columns=['Subcampo', 'Interferencia', 'Tensión', 'Localización', 'Georradar', 'Levantamiento'])
+        st.session_state.df_q3 = pd.DataFrame(columns=['Descripción', 'Tipo', 'Valor']) # Estructura simplificada
     if 'df_q4' not in st.session_state:
         st.session_state.df_q4 = pd.DataFrame(columns=['Vial', 'Levantamiento (m)'])
         
@@ -76,7 +75,7 @@ def initialize_state():
     if 'objetivos_cuadrante' not in st.session_state:
         st.session_state.objetivos_cuadrante = {
             'Q1': {'vias': 7366, 'interferencias': 0},
-            'Q2': {'vias': 0, 'interferencias': 53},
+            'Q2': {'vias': 13040, 'interferencias': 53},
             'Q3': {'vias': 0, 'interferencias': 111},
             'Q4': {'vias': 11182, 'interferencias': 0}
         }
@@ -107,23 +106,15 @@ with st.sidebar:
         try:
             with zipfile.ZipFile(uploaded_zip, 'r') as z:
                 cols_vias = ['Vial', 'Levantamiento (m)']
-                cols_interf = ['Subcampo', 'Interferencia', 'Tensión', 'Localización', 'Georradar', 'Levantamiento']
+                cols_unificadas = ['Descripción', 'Tipo', 'Valor']
                 
-                for i in [1, 4]: # Vias
+                for i in [1, 4]:
                     filename = f'cuadrante_{i}.csv'
-                    if filename in z.namelist():
-                        df_temp = pd.read_csv(z.open(filename), sep=';')
-                        if len(df_temp.columns) == len(cols_vias):
-                            df_temp.columns = cols_vias
-                            st.session_state[f'df_q{i}'] = df_temp
+                    if filename in z.namelist(): st.session_state[f'df_q{i}'] = pd.read_csv(z.open(filename), sep=';')
                 
-                for i in [2, 3]: # Interferencias
+                for i in [2, 3]:
                     filename = f'cuadrante_{i}.csv'
-                    if filename in z.namelist():
-                        df_temp = pd.read_csv(z.open(filename), sep=';')
-                        if len(df_temp.columns) == len(cols_interf):
-                            df_temp.columns = cols_interf
-                            st.session_state[f'df_q{i}'] = df_temp
+                    if filename in z.namelist(): st.session_state[f'df_q{i}'] = pd.read_csv(z.open(filename), sep=';')
 
             st.success("¡Datos restaurados!")
             st.rerun()
@@ -142,37 +133,33 @@ def safe_sum_numeric_column(df, column_name):
         return pd.to_numeric(df[column_name], errors='coerce').sum()
     return 0
 
+# Vías
 vias_q1 = safe_sum_numeric_column(st.session_state.df_q1, 'Levantamiento (m)')
 vias_q4 = safe_sum_numeric_column(st.session_state.df_q4, 'Levantamiento (m)')
-vias_levantadas = vias_q1 + vias_q4
+df2_vias = st.session_state.df_q2[st.session_state.df_q2['Tipo'] == 'Vía'] if 'Tipo' in st.session_state.df_q2.columns else pd.DataFrame({'Valor': []})
+df3_vias = st.session_state.df_q3[st.session_state.df_q3['Tipo'] == 'Vía'] if 'Tipo' in st.session_state.df_q3.columns else pd.DataFrame({'Valor': []})
+vias_q2 = safe_sum_numeric_column(df2_vias, 'Valor')
+vias_q3 = safe_sum_numeric_column(df3_vias, 'Valor')
+vias_levantadas = vias_q1 + vias_q2 + vias_q3 + vias_q4
 
-def count_completed(df, task_column):
-    if task_column in df.columns:
-        # Considera una celda como 'completada' si no está vacía.
-        return df[task_column].notna().sum()
-    return 0
-
-localizacion_completadas = count_completed(st.session_state.df_q2, 'Localización') + count_completed(st.session_state.df_q3, 'Localización')
-georradar_completadas = count_completed(st.session_state.df_q2, 'Georradar') + count_completed(st.session_state.df_q3, 'Georradar')
-levantamiento_completadas = count_completed(st.session_state.df_q2, 'Levantamiento') + count_completed(st.session_state.df_q3, 'Levantamiento')
+# Interferencias
+df2_interf = st.session_state.df_q2[st.session_state.df_q2['Tipo'] == 'Interferencia'] if 'Tipo' in st.session_state.df_q2.columns else pd.DataFrame({'Valor': []})
+df3_interf = st.session_state.df_q3[st.session_state.df_q3['Tipo'] == 'Interferencia'] if 'Tipo' in st.session_state.df_q3.columns else pd.DataFrame({'Valor': []})
+interf_q2 = safe_sum_numeric_column(df2_interf, 'Valor')
+interf_q3 = safe_sum_numeric_column(df3_interf, 'Valor')
+interferencias_encontradas = interf_q2 + interf_q3
 
 # --- DASHBOARD GENERAL ---
 st.header("Dashboard de Avance General")
-col1, col2, col3, col4 = st.columns(4, gap="large")
+col1, col2 = st.columns(2, gap="large")
 total_vias = st.session_state.objetivos_generales['vias']
 total_interf = st.session_state.objetivos_generales['interferencias']
 
 porcentaje_vias = (vias_levantadas / total_vias) if total_vias > 0 else 0
 col1.metric("Avance de Vías (Metros)", f"{int(vias_levantadas):,} / {total_vias:,} m", f"{porcentaje_vias:.1%} Progreso")
 
-porc_localizacion = (localizacion_completadas / total_interf) if total_interf > 0 else 0
-col2.metric("Avance Localización", f"{localizacion_completadas} / {total_interf}", f"{porc_localizacion:.1%} Progreso")
-
-porc_georradar = (georradar_completadas / total_interf) if total_interf > 0 else 0
-col3.metric("Avance Georradar", f"{georradar_completadas} / {total_interf}", f"{porc_georradar:.1%} Progreso")
-
-porc_levantamiento = (levantamiento_completadas / total_interf) if total_interf > 0 else 0
-col4.metric("Avance Levantamiento", f"{levantamiento_completadas} / {total_interf}", f"{porc_levantamiento:.1%} Progreso")
+porc_interf = (interferencias_encontradas / total_interf) if total_interf > 0 else 0
+col2.metric("Avance de Interferencias", f"{int(interferencias_encontradas)} / {total_interf}", f"{porc_interf:.1%} Progreso")
 
 # --- CONFIGURACIÓN DE OBJETIVOS (EDITABLE) ---
 with st.expander("⚙️ Configurar Objetivos del Proyecto"):
@@ -206,14 +193,12 @@ def render_quadrant_card(column, title, vias_prog, interf_prog, q_key):
         st.progress(prog_v)
         
         prog_i = (interf_prog / interf_total) if interf_total > 0 else 0
-        st.write(f"**Interferencias:** `{interf_prog} / {interf_total}` ({prog_i:.1%})")
+        st.write(f"**Interferencias:** `{int(interf_prog)} / {interf_total}` ({prog_i:.1%})")
         st.progress(prog_i)
 
 render_quadrant_card(q_cols[0], "Cuadrante 1", vias_q1, 0, 'Q1')
-interf_q2_completed = count_completed(st.session_state.df_q2, 'Levantamiento')
-render_quadrant_card(q_cols[1], "Cuadrante 2", 0, interf_q2_completed, 'Q2')
-interf_q3_completed = count_completed(st.session_state.df_q3, 'Levantamiento')
-render_quadrant_card(q_cols[2], "Cuadrante 3", 0, interf_q3_completed, 'Q3')
+render_quadrant_card(q_cols[1], "Cuadrante 2", vias_q2, interf_q2, 'Q2')
+render_quadrant_card(q_cols[2], "Cuadrante 3", vias_q3, interf_q3, 'Q3')
 render_quadrant_card(q_cols[3], "Cuadrante 4", vias_q4, 0, 'Q4')
 
 st.markdown("---")
@@ -225,69 +210,51 @@ tab1, tab2, tab3, tab4 = st.tabs(["📍 Cuadrante 1", "⚡ Cuadrante 2", "⚡ Cu
 def render_vias_tab(tab, df_key, cuadrante_num):
     with tab:
         form_key = f'add_form_q{cuadrante_num}'
-        
-        if st.button(f"➕ Agregar Registro a Cuadrante {cuadrante_num}", use_container_width=True):
-            st.session_state[form_key] = not st.session_state.get(form_key, False)
-        
+        if st.button(f"➕ Agregar Registro a Cuadrante {cuadrante_num}", use_container_width=True): st.session_state[form_key] = not st.session_state.get(form_key, False)
         if st.session_state.get(form_key, False):
             with st.form(key=f"form_q{cuadrante_num}"):
                 st.subheader(f"Nuevo Registro para Cuadrante {cuadrante_num}")
                 vial = st.text_input("Nombre del Vial")
                 metros = st.number_input("Metros Levantados", min_value=0.0, format="%.2f")
-                
                 c1, c2 = st.columns(2)
-                submitted = c1.form_submit_button("✅ Guardar Registro", use_container_width=True)
-                cancelled = c2.form_submit_button("❌ Cancelar", use_container_width=True)
-
-                if submitted and vial:
+                if c1.form_submit_button("✅ Guardar Registro", use_container_width=True) and vial:
                     new_data = pd.DataFrame([{'Vial': vial, 'Levantamiento (m)': metros}])
                     st.session_state[df_key] = pd.concat([st.session_state[df_key], new_data], ignore_index=True)
                     st.session_state[form_key] = False
                     st.toast("¡Registro guardado con éxito!")
                     st.rerun()
-                if cancelled:
+                if c2.form_submit_button("❌ Cancelar", use_container_width=True):
                     st.session_state[form_key] = False
                     st.rerun()
-
         st.subheader(f"Datos Registrados")
         st.data_editor(st.session_state[df_key], num_rows="dynamic", use_container_width=True, key=f"editor_q{cuadrante_num}")
 
-def render_interferencias_tab(tab, df_key, cuadrante_num):
+def render_unified_tab(tab, df_key, cuadrante_num):
     with tab:
         form_key = f'add_form_q{cuadrante_num}'
-
-        if st.button(f"➕ Agregar Registro a Cuadrante {cuadrante_num}", use_container_width=True):
-            st.session_state[form_key] = not st.session_state.get(form_key, False)
-        
+        if st.button(f"➕ Agregar Registro a Cuadrante {cuadrante_num}", use_container_width=True): st.session_state[form_key] = not st.session_state.get(form_key, False)
         if st.session_state.get(form_key, False):
             with st.form(key=f"form_q{cuadrante_num}"):
                 st.subheader(f"Nuevo Registro para Cuadrante {cuadrante_num}")
-                subcampo = st.text_input("Subcampo")
-                interferencia = st.text_input("Interferencia")
-                tension = st.selectbox("Tensión", ["Baja", "Media", "Otra"])
-                localizacion = st.text_input("Localización (Ej: OK, fecha)")
-                georradar = st.text_input("Georradar (Ej: OK, fecha)")
-                levantamiento = st.text_input("Levantamiento (Ej: OK, fecha)")
-                
+                tipo = st.selectbox("Tipo de Registro", ["Vía", "Interferencia"])
+                descripcion = st.text_input("Descripción (Nombre del Vial, ID Interferencia, etc.)")
+                if tipo == "Vía": valor = st.number_input("Metros Levantados", min_value=0.0, format="%.2f")
+                else: valor = st.number_input("Cantidad de Interferencias", min_value=1, step=1, value=1)
                 c1, c2 = st.columns(2)
-                submitted = c1.form_submit_button("✅ Guardar Registro", use_container_width=True)
-                cancelled = c2.form_submit_button("❌ Cancelar", use_container_width=True)
-
-                if submitted and subcampo and interferencia:
-                    new_data = pd.DataFrame([{'Subcampo': subcampo, 'Interferencia': interferencia, 'Tensión': tension, 'Localización': localizacion, 'Georradar': georradar, 'Levantamiento': levantamiento}])
+                if c1.form_submit_button("✅ Guardar Registro", use_container_width=True) and descripcion:
+                    new_data = pd.DataFrame([{'Descripción': descripcion, 'Tipo': tipo, 'Valor': valor}])
                     st.session_state[df_key] = pd.concat([st.session_state[df_key], new_data], ignore_index=True)
                     st.session_state[form_key] = False
                     st.toast("¡Registro guardado con éxito!")
                     st.rerun()
-                if cancelled:
+                if c2.form_submit_button("❌ Cancelar", use_container_width=True):
                     st.session_state[form_key] = False
                     st.rerun()
-
         st.subheader(f"Datos Registrados")
         st.data_editor(st.session_state[df_key], num_rows="dynamic", use_container_width=True, key=f"editor_q{cuadrante_num}")
 
 render_vias_tab(tab1, 'df_q1', 1)
-render_interferencias_tab(tab2, 'df_q2', 2)
-render_interferencias_tab(tab3, 'df_q3', 3)
+render_unified_tab(tab2, 'df_q2', 2)
+render_unified_tab(tab3, 'df_q3', 3)
 render_vias_tab(tab4, 'df_q4', 4)
 
