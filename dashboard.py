@@ -78,16 +78,34 @@ with st.sidebar:
                     zip_file.writestr(f'cuadrante_{i}.csv', csv_buffer)
         st.download_button("📥 Descargar Datos", zip_buffer.getvalue(), "progreso_topografia.zip", "application/zip", use_container_width=True)
     except Exception as e: st.error(f"Error al crear el archivo: {e}")
+    
     uploaded_zip = st.file_uploader("Sube un archivo .zip para restaurar los datos.", type="zip")
     if uploaded_zip:
         try:
             with zipfile.ZipFile(uploaded_zip, 'r') as z:
-                for i in range(1, 5):
+                # Definir columnas esperadas para asegurar compatibilidad
+                cols_q1_q4 = ['Vial', 'Levantamiento (m)']
+                cols_q2_q3 = ['Descripción', 'Tipo', 'Tarea', 'Cantidad']
+                
+                # Cargar Q1 y Q4 asegurando la estructura
+                for i in [1, 4]:
                     filename = f'cuadrante_{i}.csv'
-                    if filename in z.namelist(): st.session_state[f'df_q{i}'] = pd.read_csv(z.open(filename), sep=';')
+                    if filename in z.namelist():
+                        loaded_df = pd.read_csv(z.open(filename), sep=';')
+                        st.session_state[f'df_q{i}'] = pd.DataFrame(loaded_df, columns=cols_q1_q4)
+
+                # Cargar Q2 y Q3 asegurando la estructura
+                for i in [2, 3]:
+                    filename = f'cuadrante_{i}.csv'
+                    if filename in z.namelist():
+                        loaded_df = pd.read_csv(z.open(filename), sep=';')
+                        st.session_state[f'df_q{i}'] = pd.DataFrame(loaded_df, columns=cols_q2_q3)
+
             st.success("¡Datos restaurados!")
             st.rerun()
-        except Exception as e: st.error(f"Error al procesar el archivo .zip: {e}")
+        except Exception as e:
+            st.error(f"Error al procesar el archivo .zip: {e}")
+
 
 # --- TÍTULO PRINCIPAL ---
 st.title("🚧 Gestor de Avance de Topografía")
@@ -103,20 +121,28 @@ def safe_sum_numeric_column(df, column_name):
 vias_q1 = safe_sum_numeric_column(st.session_state.df_q1, 'Levantamiento (m)')
 vias_q4 = safe_sum_numeric_column(st.session_state.df_q4, 'Levantamiento (m)')
 
-df_vias_q2 = st.session_state.df_q2[st.session_state.df_q2['Tipo'] == 'Vía y Drenajes']
-vias_q2 = safe_sum_numeric_column(df_vias_q2, 'Cantidad')
-df_vias_q3 = st.session_state.df_q3[st.session_state.df_q3['Tipo'] == 'Vía y Drenajes']
-vias_q3 = safe_sum_numeric_column(df_vias_q3, 'Cantidad')
+# Cálculos seguros para Cuadrantes 2 y 3
+df_q2 = st.session_state.df_q2
+vias_q2 = 0
+localizacion_q2, georadar_q2, levantamiento_q2 = 0, 0, 0
+if 'Tipo' in df_q2.columns and 'Tarea' in df_q2.columns and 'Cantidad' in df_q2.columns:
+    df_vias_q2 = df_q2[df_q2['Tipo'] == 'Vía y Drenajes']
+    vias_q2 = safe_sum_numeric_column(df_vias_q2, 'Cantidad')
+    df_interf_q2 = df_q2[df_q2['Tipo'] == 'Interferencia']
+    localizacion_q2 = safe_sum_numeric_column(df_interf_q2[df_interf_q2['Tarea'] == 'Localización'], 'Cantidad')
+    georadar_q2 = safe_sum_numeric_column(df_interf_q2[df_interf_q2['Tarea'] == 'Georadar'], 'Cantidad')
+    levantamiento_q2 = safe_sum_numeric_column(df_interf_q2[df_interf_q2['Tarea'] == 'Levantamiento'], 'Cantidad')
 
-df_interf_q2 = st.session_state.df_q2[st.session_state.df_q2['Tipo'] == 'Interferencia']
-localizacion_q2 = safe_sum_numeric_column(df_interf_q2[df_interf_q2['Tarea'] == 'Localización'], 'Cantidad')
-georadar_q2 = safe_sum_numeric_column(df_interf_q2[df_interf_q2['Tarea'] == 'Georadar'], 'Cantidad')
-levantamiento_q2 = safe_sum_numeric_column(df_interf_q2[df_interf_q2['Tarea'] == 'Levantamiento'], 'Cantidad')
-
-df_interf_q3 = st.session_state.df_q3[st.session_state.df_q3['Tipo'] == 'Interferencia']
-localizacion_q3 = safe_sum_numeric_column(df_interf_q3[df_interf_q3['Tarea'] == 'Localización'], 'Cantidad')
-georadar_q3 = safe_sum_numeric_column(df_interf_q3[df_interf_q3['Tarea'] == 'Georadar'], 'Cantidad')
-levantamiento_q3 = safe_sum_numeric_column(df_interf_q3[df_interf_q3['Tarea'] == 'Levantamiento'], 'Cantidad')
+df_q3 = st.session_state.df_q3
+vias_q3 = 0
+localizacion_q3, georadar_q3, levantamiento_q3 = 0, 0, 0
+if 'Tipo' in df_q3.columns and 'Tarea' in df_q3.columns and 'Cantidad' in df_q3.columns:
+    df_vias_q3 = df_q3[df_q3['Tipo'] == 'Vía y Drenajes']
+    vias_q3 = safe_sum_numeric_column(df_vias_q3, 'Cantidad')
+    df_interf_q3 = df_q3[df_q3['Tipo'] == 'Interferencia']
+    localizacion_q3 = safe_sum_numeric_column(df_interf_q3[df_interf_q3['Tarea'] == 'Localización'], 'Cantidad')
+    georadar_q3 = safe_sum_numeric_column(df_interf_q3[df_interf_q3['Tarea'] == 'Georadar'], 'Cantidad')
+    levantamiento_q3 = safe_sum_numeric_column(df_interf_q3[df_interf_q3['Tarea'] == 'Levantamiento'], 'Cantidad')
 
 # CÁLCULOS TOTALES (SUMA DE CUADRANTES)
 vias_levantadas_total = vias_q1 + vias_q2 + vias_q3 + vias_q4
@@ -207,8 +233,10 @@ def render_unified_quadrant(quadrant_num, df_key, vias_progress, levantamiento_p
         st.plotly_chart(create_donut_chart(vias_progress, vias_obj, f"Vías y Drenajes {' ' * quadrant_num}"), use_container_width=True)
         st.info(f"**Vías:** `{int(vias_progress)} / {vias_obj} m`")
     with chart_cols[1]:
+        # Usamos el total de interferencias del cuadrante como referencia para el levantamiento
+        total_interferencias_cuadrante = georadar_q2 + localizacion_q2 + levantamiento_progress if quadrant_num == 2 else georadar_q3 + localizacion_q3 + levantamiento_progress
         st.plotly_chart(create_donut_chart(levantamiento_progress, interf_obj, f"Interferencias {' ' * quadrant_num}"), use_container_width=True)
-        st.info(f"**Interferencias:** `{int(levantamiento_progress)} / {interf_obj}`")
+        st.info(f"**Interferencias (Levantamiento):** `{int(levantamiento_progress)} / {interf_obj}`")
     
     with st.form(key=f"form_q{quadrant_num}"):
         st.write("**Agregar Nuevo Registro**")
@@ -265,3 +293,4 @@ with c4:
                     st.rerun()
         with st.expander("Ver/Editar Datos de Cuadrante 4"):
             st.data_editor(st.session_state.df_q4, num_rows="dynamic", use_container_width=True, key="editor_q4")
+
