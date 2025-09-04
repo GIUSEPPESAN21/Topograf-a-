@@ -100,15 +100,36 @@ with st.sidebar:
     if uploaded_zip:
         try:
             with zipfile.ZipFile(uploaded_zip, 'r') as z:
+                # Nombres de columnas esperados
                 cols_vias = ['Vial', 'Levantamiento (m)']
                 cols_interf = ['Subcampo', 'Interferencia', 'Tensión', 'Localización', 'Georradar', 'Levantamiento']
-                for i in [1, 4]:
-                    if f'cuadrante_{i}.csv' in z.namelist(): st.session_state[f'df_q{i}'] = pd.read_csv(z.open(f'cuadrante_{i}.csv'), sep=';', names=cols_vias, header=0)
-                for i in [2, 3]:
-                    if f'cuadrante_{i}.csv' in z.namelist(): st.session_state[f'df_q{i}'] = pd.read_csv(z.open(f'cuadrante_{i}.csv'), sep=';', names=cols_interf, header=0)
+                
+                # Procesar archivos con validación
+                for i in [1, 4]: # Vias
+                    filename = f'cuadrante_{i}.csv'
+                    if filename in z.namelist():
+                        df_temp = pd.read_csv(z.open(filename), sep=';')
+                        if len(df_temp.columns) == len(cols_vias):
+                            df_temp.columns = cols_vias
+                            st.session_state[f'df_q{i}'] = df_temp
+                        else:
+                            st.warning(f"Archivo '{filename}' tiene formato incorrecto. Omitido.")
+                
+                for i in [2, 3]: # Interferencias
+                    filename = f'cuadrante_{i}.csv'
+                    if filename in z.namelist():
+                        df_temp = pd.read_csv(z.open(filename), sep=';')
+                        if len(df_temp.columns) == len(cols_interf):
+                            df_temp.columns = cols_interf
+                            st.session_state[f'df_q{i}'] = df_temp
+                        else:
+                            st.warning(f"Archivo '{filename}' tiene formato incorrecto. Omitido.")
+
             st.success("¡Datos restaurados!")
             st.rerun()
-        except Exception as e: st.error(f"Error al leer el .zip: {e}")
+        except Exception as e:
+            st.error(f"Error al procesar el archivo .zip: {e}")
+
 
 # --- TÍTULO PRINCIPAL ---
 st.title("🚧 Gestor de Avance de Topografía")
@@ -116,18 +137,28 @@ st.markdown("### **Proyecto:** GUAYEPO I & II")
 st.markdown("---")
 
 # --- LÓGICA DE CÁLCULO ---
-vias_q1 = pd.to_numeric(st.session_state.df_q1.get('Levantamiento (m)'), errors='coerce').sum()
-vias_q4 = pd.to_numeric(st.session_state.df_q4.get('Levantamiento (m)'), errors='coerce').sum()
+def safe_sum_numeric_column(df, column_name):
+    """Convierte de forma segura una columna a numérico y la suma, manejando errores."""
+    try:
+        if column_name in df.columns:
+            return pd.to_numeric(df[column_name], errors='coerce').sum()
+        return 0
+    except Exception:
+        return 0
+
+vias_q1 = safe_sum_numeric_column(st.session_state.df_q1, 'Levantamiento (m)')
+vias_q4 = safe_sum_numeric_column(st.session_state.df_q4, 'Levantamiento (m)')
 vias_levantadas = vias_q1 + vias_q4
 
-def count_completed(task_column):
-    q2_completed = st.session_state.df_q2.get(task_column, pd.Series(dtype=str)).notna().sum()
-    q3_completed = st.session_state.df_q3.get(task_column, pd.Series(dtype=str)).notna().sum()
-    return q2_completed + q3_completed
+def count_completed(df, task_column):
+    if task_column in df.columns:
+        return df[task_column].notna().sum()
+    return 0
 
-localizacion_completadas = count_completed('Localización')
-georradar_completadas = count_completed('Georradar')
-levantamiento_completadas = count_completed('Levantamiento')
+localizacion_completadas = count_completed(st.session_state.df_q2, 'Localización') + count_completed(st.session_state.df_q3, 'Localización')
+georradar_completadas = count_completed(st.session_state.df_q2, 'Georradar') + count_completed(st.session_state.df_q3, 'Georradar')
+levantamiento_completadas = count_completed(st.session_state.df_q2, 'Levantamiento') + count_completed(st.session_state.df_q3, 'Levantamiento')
+
 
 # --- DASHBOARD GENERAL ---
 st.header("Dashboard de Avance General")
@@ -183,8 +214,10 @@ def render_quadrant_card(column, title, vias_prog, interf_prog, q_key):
         st.progress(prog_i)
 
 render_quadrant_card(q_cols[0], "Cuadrante 1", vias_q1, 0, 'Q1')
-render_quadrant_card(q_cols[1], "Cuadrante 2", 0, count_completed('Levantamiento'), 'Q2')
-render_quadrant_card(q_cols[2], "Cuadrante 3", 0, count_completed('Levantamiento'), 'Q3')
+interf_q2_completed = count_completed(st.session_state.df_q2, 'Levantamiento')
+render_quadrant_card(q_cols[1], "Cuadrante 2", 0, interf_q2_completed, 'Q2')
+interf_q3_completed = count_completed(st.session_state.df_q3, 'Levantamiento')
+render_quadrant_card(q_cols[2], "Cuadrante 3", 0, interf_q3_completed, 'Q3')
 render_quadrant_card(q_cols[3], "Cuadrante 4", vias_q4, 0, 'Q4')
 
 st.markdown("---")
