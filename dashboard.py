@@ -46,6 +46,12 @@ st.markdown("""
         border: 1px solid #e6e6e6;
         border-radius: 8px;
     }
+    .stForm {
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 20px;
+        background-color: #ffffff;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -100,11 +106,9 @@ with st.sidebar:
     if uploaded_zip:
         try:
             with zipfile.ZipFile(uploaded_zip, 'r') as z:
-                # Nombres de columnas esperados
                 cols_vias = ['Vial', 'Levantamiento (m)']
                 cols_interf = ['Subcampo', 'Interferencia', 'Tensión', 'Localización', 'Georradar', 'Levantamiento']
                 
-                # Procesar archivos con validación
                 for i in [1, 4]: # Vias
                     filename = f'cuadrante_{i}.csv'
                     if filename in z.namelist():
@@ -112,8 +116,6 @@ with st.sidebar:
                         if len(df_temp.columns) == len(cols_vias):
                             df_temp.columns = cols_vias
                             st.session_state[f'df_q{i}'] = df_temp
-                        else:
-                            st.warning(f"Archivo '{filename}' tiene formato incorrecto. Omitido.")
                 
                 for i in [2, 3]: # Interferencias
                     filename = f'cuadrante_{i}.csv'
@@ -122,8 +124,6 @@ with st.sidebar:
                         if len(df_temp.columns) == len(cols_interf):
                             df_temp.columns = cols_interf
                             st.session_state[f'df_q{i}'] = df_temp
-                        else:
-                            st.warning(f"Archivo '{filename}' tiene formato incorrecto. Omitido.")
 
             st.success("¡Datos restaurados!")
             st.rerun()
@@ -138,13 +138,9 @@ st.markdown("---")
 
 # --- LÓGICA DE CÁLCULO ---
 def safe_sum_numeric_column(df, column_name):
-    """Convierte de forma segura una columna a numérico y la suma, manejando errores."""
-    try:
-        if column_name in df.columns:
-            return pd.to_numeric(df[column_name], errors='coerce').sum()
-        return 0
-    except Exception:
-        return 0
+    if column_name in df.columns:
+        return pd.to_numeric(df[column_name], errors='coerce').sum()
+    return 0
 
 vias_q1 = safe_sum_numeric_column(st.session_state.df_q1, 'Levantamiento (m)')
 vias_q4 = safe_sum_numeric_column(st.session_state.df_q4, 'Levantamiento (m)')
@@ -152,13 +148,13 @@ vias_levantadas = vias_q1 + vias_q4
 
 def count_completed(df, task_column):
     if task_column in df.columns:
+        # Considera una celda como 'completada' si no está vacía.
         return df[task_column].notna().sum()
     return 0
 
 localizacion_completadas = count_completed(st.session_state.df_q2, 'Localización') + count_completed(st.session_state.df_q3, 'Localización')
 georradar_completadas = count_completed(st.session_state.df_q2, 'Georradar') + count_completed(st.session_state.df_q3, 'Georradar')
 levantamiento_completadas = count_completed(st.session_state.df_q2, 'Levantamiento') + count_completed(st.session_state.df_q3, 'Levantamiento')
-
 
 # --- DASHBOARD GENERAL ---
 st.header("Dashboard de Avance General")
@@ -228,37 +224,65 @@ tab1, tab2, tab3, tab4 = st.tabs(["📍 Cuadrante 1", "⚡ Cuadrante 2", "⚡ Cu
 
 def render_vias_tab(tab, df_key, cuadrante_num):
     with tab:
-        if st.button(f"➕ Agregar Registro a Cuadrante {cuadrante_num}", use_container_width=True): st.session_state[f'modal_q{cuadrante_num}'] = True
-        if st.session_state.get(f'modal_q{cuadrante_num}', False):
-            with st.dialog(f"Nuevo Registro - Cuadrante {cuadrante_num}"):
-                with st.form(key=f"form_q{cuadrante_num}", clear_on_submit=True):
-                    vial = st.text_input("Nombre del Vial")
-                    metros = st.number_input("Metros Levantados", min_value=0.0, format="%.2f")
-                    if st.form_submit_button("✅ Guardar") and vial:
-                        new_data = pd.DataFrame([{'Vial': vial, 'Levantamiento (m)': metros}])
-                        st.session_state[df_key] = pd.concat([st.session_state[df_key], new_data], ignore_index=True)
-                        st.session_state[f'modal_q{cuadrante_num}'] = False
-                        st.rerun()
+        form_key = f'add_form_q{cuadrante_num}'
+        
+        if st.button(f"➕ Agregar Registro a Cuadrante {cuadrante_num}", use_container_width=True):
+            st.session_state[form_key] = not st.session_state.get(form_key, False)
+        
+        if st.session_state.get(form_key, False):
+            with st.form(key=f"form_q{cuadrante_num}"):
+                st.subheader(f"Nuevo Registro para Cuadrante {cuadrante_num}")
+                vial = st.text_input("Nombre del Vial")
+                metros = st.number_input("Metros Levantados", min_value=0.0, format="%.2f")
+                
+                c1, c2 = st.columns(2)
+                submitted = c1.form_submit_button("✅ Guardar Registro", use_container_width=True)
+                cancelled = c2.form_submit_button("❌ Cancelar", use_container_width=True)
+
+                if submitted and vial:
+                    new_data = pd.DataFrame([{'Vial': vial, 'Levantamiento (m)': metros}])
+                    st.session_state[df_key] = pd.concat([st.session_state[df_key], new_data], ignore_index=True)
+                    st.session_state[form_key] = False
+                    st.toast("¡Registro guardado con éxito!")
+                    st.rerun()
+                if cancelled:
+                    st.session_state[form_key] = False
+                    st.rerun()
+
         st.subheader(f"Datos Registrados")
         st.data_editor(st.session_state[df_key], num_rows="dynamic", use_container_width=True, key=f"editor_q{cuadrante_num}")
 
 def render_interferencias_tab(tab, df_key, cuadrante_num):
     with tab:
-        if st.button(f"➕ Agregar Registro a Cuadrante {cuadrante_num}", use_container_width=True): st.session_state[f'modal_q{cuadrante_num}'] = True
-        if st.session_state.get(f'modal_q{cuadrante_num}', False):
-            with st.dialog(f"Nuevo Registro - Cuadrante {cuadrante_num}"):
-                with st.form(key=f"form_q{cuadrante_num}", clear_on_submit=True):
-                    subcampo = st.text_input("Subcampo")
-                    interferencia = st.text_input("Interferencia")
-                    tension = st.selectbox("Tensión", ["Baja", "Media", "Otra"])
-                    localizacion = st.text_input("Localización (Ej: OK, fecha)")
-                    georradar = st.text_input("Georradar (Ej: OK, fecha)")
-                    levantamiento = st.text_input("Levantamiento (Ej: OK, fecha)")
-                    if st.form_submit_button("✅ Guardar") and subcampo and interferencia:
-                        new_data = pd.DataFrame([{'Subcampo': subcampo, 'Interferencia': interferencia, 'Tensión': tension, 'Localización': localizacion, 'Georradar': georradar, 'Levantamiento': levantamiento}])
-                        st.session_state[df_key] = pd.concat([st.session_state[df_key], new_data], ignore_index=True)
-                        st.session_state[f'modal_q{cuadrante_num}'] = False
-                        st.rerun()
+        form_key = f'add_form_q{cuadrante_num}'
+
+        if st.button(f"➕ Agregar Registro a Cuadrante {cuadrante_num}", use_container_width=True):
+            st.session_state[form_key] = not st.session_state.get(form_key, False)
+        
+        if st.session_state.get(form_key, False):
+            with st.form(key=f"form_q{cuadrante_num}"):
+                st.subheader(f"Nuevo Registro para Cuadrante {cuadrante_num}")
+                subcampo = st.text_input("Subcampo")
+                interferencia = st.text_input("Interferencia")
+                tension = st.selectbox("Tensión", ["Baja", "Media", "Otra"])
+                localizacion = st.text_input("Localización (Ej: OK, fecha)")
+                georradar = st.text_input("Georradar (Ej: OK, fecha)")
+                levantamiento = st.text_input("Levantamiento (Ej: OK, fecha)")
+                
+                c1, c2 = st.columns(2)
+                submitted = c1.form_submit_button("✅ Guardar Registro", use_container_width=True)
+                cancelled = c2.form_submit_button("❌ Cancelar", use_container_width=True)
+
+                if submitted and subcampo and interferencia:
+                    new_data = pd.DataFrame([{'Subcampo': subcampo, 'Interferencia': interferencia, 'Tensión': tension, 'Localización': localizacion, 'Georradar': georradar, 'Levantamiento': levantamiento}])
+                    st.session_state[df_key] = pd.concat([st.session_state[df_key], new_data], ignore_index=True)
+                    st.session_state[form_key] = False
+                    st.toast("¡Registro guardado con éxito!")
+                    st.rerun()
+                if cancelled:
+                    st.session_state[form_key] = False
+                    st.rerun()
+
         st.subheader(f"Datos Registrados")
         st.data_editor(st.session_state[df_key], num_rows="dynamic", use_container_width=True, key=f"editor_q{cuadrante_num}")
 
