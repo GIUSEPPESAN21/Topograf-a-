@@ -34,8 +34,11 @@ st.markdown("""
         background-color: #fafafa;
     }
     /* Asegurar que las columnas se estiren para alinear las tarjetas */
-    div[data-testid="stHorizontalBlock"] {
-        align-items: stretch;
+    div[data-testid="stHorizontalBlock"] > div {
+        height: 100%;
+    }
+    .st-emotion-cache-1fplaw { /* Corregir el espaciado para alinear tarjetas */
+        height: 100%;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -75,18 +78,26 @@ with st.sidebar:
     except Exception as e: st.error(f"Error al crear el archivo: {e}")
     
     uploaded_zip = st.file_uploader("Sube un archivo .zip para restaurar los datos.", type="zip")
-    if uploaded_zip:
-        try:
-            with zipfile.ZipFile(uploaded_zip, 'r') as z:
-                cols_unified = ['Descripción', 'Tipo', 'Tarea', 'Cantidad']
-                for i in range(1, 5):
-                    filename = f'cuadrante_{i}.csv'
-                    if filename in z.namelist():
-                        loaded_df = pd.read_csv(z.open(filename), sep=';')
-                        st.session_state[f'df_q{i}'] = pd.DataFrame(loaded_df, columns=cols_unified).fillna(0) # Rellenar NaNs
-            st.success("¡Datos restaurados!")
-            st.rerun()
-        except Exception as e: st.error(f"Error al procesar el archivo .zip: {e}")
+    
+    # --- OPTIMIZACIÓN DE CARGA ---
+    # Procesar el archivo solo una vez por carga
+    if uploaded_zip is not None:
+        if 'last_zip_name' not in st.session_state or st.session_state.last_zip_name != uploaded_zip.name:
+            try:
+                with zipfile.ZipFile(uploaded_zip, 'r') as z:
+                    cols_unified = ['Descripción', 'Tipo', 'Tarea', 'Cantidad']
+                    for i in range(1, 5):
+                        filename = f'cuadrante_{i}.csv'
+                        if filename in z.namelist():
+                            loaded_df = pd.read_csv(z.open(filename), sep=';')
+                            st.session_state[f'df_q{i}'] = pd.DataFrame(loaded_df, columns=cols_unified).fillna(0)
+                st.session_state.last_zip_name = uploaded_zip.name
+                st.success("¡Datos restaurados!")
+                st.rerun()
+            except Exception as e: st.error(f"Error al procesar el archivo .zip: {e}")
+    elif 'last_zip_name' in st.session_state:
+        del st.session_state.last_zip_name
+
 
 # --- TÍTULO PRINCIPAL ---
 st.title("🚧 Gestor de Avance de Topografía")
@@ -172,18 +183,19 @@ def render_quadrant_card(q_num):
         st.subheader(f"📍 Cuadrante {q_num}")
         chart_cols = st.columns(4)
         
-        # FIX: Añadir espacios para hacer los títulos de los gráficos únicos
+        # FIX: Añadir un carácter no visible para hacer los títulos únicos
+        zws = '\u200B'
         with chart_cols[0]:
-            st.plotly_chart(create_donut_chart(vias_progress[q_num], vias_obj, f"Vías y Drenajes{' ' * q_num}"), use_container_width=True)
+            st.plotly_chart(create_donut_chart(vias_progress[q_num], vias_obj, f"Vías y Drenajes{zws * q_num}"), use_container_width=True)
             st.info(f"`{int(vias_progress[q_num])} / {vias_obj} m`")
         with chart_cols[1]:
-            st.plotly_chart(create_donut_chart(localizacion_progress[q_num], interf_obj, f"Localización{' ' * q_num}"), use_container_width=True)
+            st.plotly_chart(create_donut_chart(localizacion_progress[q_num], interf_obj, f"Localización{zws * q_num}"), use_container_width=True)
             st.info(f"`{int(localizacion_progress[q_num])} / {interf_obj}`")
         with chart_cols[2]:
-            st.plotly_chart(create_donut_chart(georadar_progress[q_num], interf_obj, f"Georadar{' ' * q_num}"), use_container_width=True)
+            st.plotly_chart(create_donut_chart(georadar_progress[q_num], interf_obj, f"Georadar{zws * q_num}"), use_container_width=True)
             st.info(f"`{int(georadar_progress[q_num])} / {interf_obj}`")
         with chart_cols[3]:
-            st.plotly_chart(create_donut_chart(levantamiento_progress[q_num], interf_obj, f"Levantamiento{' ' * q_num}"), use_container_width=True)
+            st.plotly_chart(create_donut_chart(levantamiento_progress[q_num], interf_obj, f"Levantamiento{zws * q_num}"), use_container_width=True)
             st.info(f"`{int(levantamiento_progress[q_num])} / {interf_obj}`")
 
         with st.form(key=f"form_q{q_num}"):
