@@ -33,6 +33,10 @@ st.markdown("""
         padding: 20px;
         background-color: #fafafa;
     }
+    /* Asegurar que las columnas se estiren para alinear las tarjetas */
+    div[data-testid="stHorizontalBlock"] {
+        align-items: stretch;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -167,17 +171,19 @@ def render_quadrant_card(q_num):
     with st.container(border=True):
         st.subheader(f"📍 Cuadrante {q_num}")
         chart_cols = st.columns(4)
+        
+        # FIX: Añadir espacios para hacer los títulos de los gráficos únicos
         with chart_cols[0]:
-            st.plotly_chart(create_donut_chart(vias_progress[q_num], vias_obj, f"Vías y Drenajes"), use_container_width=True)
+            st.plotly_chart(create_donut_chart(vias_progress[q_num], vias_obj, f"Vías y Drenajes{' ' * q_num}"), use_container_width=True)
             st.info(f"`{int(vias_progress[q_num])} / {vias_obj} m`")
         with chart_cols[1]:
-            st.plotly_chart(create_donut_chart(localizacion_progress[q_num], interf_obj, f"Localización"), use_container_width=True)
+            st.plotly_chart(create_donut_chart(localizacion_progress[q_num], interf_obj, f"Localización{' ' * q_num}"), use_container_width=True)
             st.info(f"`{int(localizacion_progress[q_num])} / {interf_obj}`")
         with chart_cols[2]:
-            st.plotly_chart(create_donut_chart(georadar_progress[q_num], interf_obj, f"Georadar"), use_container_width=True)
+            st.plotly_chart(create_donut_chart(georadar_progress[q_num], interf_obj, f"Georadar{' ' * q_num}"), use_container_width=True)
             st.info(f"`{int(georadar_progress[q_num])} / {interf_obj}`")
         with chart_cols[3]:
-            st.plotly_chart(create_donut_chart(levantamiento_progress[q_num], interf_obj, f"Levantamiento"), use_container_width=True)
+            st.plotly_chart(create_donut_chart(levantamiento_progress[q_num], interf_obj, f"Levantamiento{' ' * q_num}"), use_container_width=True)
             st.info(f"`{int(levantamiento_progress[q_num])} / {interf_obj}`")
 
         with st.form(key=f"form_q{q_num}"):
@@ -205,7 +211,7 @@ with q_c1:
     render_quadrant_card(1)
 with q_c2:
     render_quadrant_card(2)
-st.markdown("<br>", unsafe_allow_html=True)
+
 q_c3, q_c4 = st.columns(2, gap="large")
 with q_c3:
     render_quadrant_card(3)
