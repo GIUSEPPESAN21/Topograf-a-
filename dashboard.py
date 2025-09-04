@@ -63,35 +63,62 @@ with st.sidebar:
     st.header("Guardar Progreso")
     st.info("Guarda todos los datos de los 4 cuadrantes en un archivo .zip.")
     
-    # Crear un archivo zip en memoria
     zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-        for i in range(1, 5):
-            df_key = f'df_q{i}'
-            if not st.session_state[df_key].empty:
-                csv_buffer = st.session_state[df_key].to_csv(index=False, sep=';').encode()
-                zip_file.writestr(f'cuadrante_{i}.csv', csv_buffer)
-
-    st.download_button(
-        label="📥 Descargar Datos",
-        data=zip_buffer.getvalue(),
-        file_name="progreso_topografia.zip",
-        mime="application/zip",
-        use_container_width=True
-    )
+    try:
+        with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+            for i in range(1, 5):
+                df_key = f'df_q{i}'
+                if not st.session_state[df_key].empty:
+                    csv_buffer = st.session_state[df_key].to_csv(index=False, sep=';').encode()
+                    zip_file.writestr(f'cuadrante_{i}.csv', csv_buffer)
+        
+        st.download_button(
+            label="📥 Descargar Datos",
+            data=zip_buffer.getvalue(),
+            file_name="progreso_topografia.zip",
+            mime="application/zip",
+            use_container_width=True
+        )
+    except Exception as e:
+        st.error(f"Error al crear el archivo de guardado: {e}")
     
     st.markdown("---")
     st.header("Cargar Progreso")
     uploaded_zip = st.file_uploader("Sube un archivo .zip para restaurar los datos.", type="zip")
     if uploaded_zip:
-        with zipfile.ZipFile(uploaded_zip, 'r') as z:
-            for i in range(1, 5):
-                try:
-                    with z.open(f'cuadrante_{i}.csv') as f:
-                        st.session_state[f'df_q{i}'] = pd.read_csv(f, sep=';')
-                except KeyError:
-                    st.error(f"El archivo 'cuadrante_{i}.csv' no se encontró en el .zip.")
-        st.success("¡Datos restaurados con éxito!")
+        try:
+            with zipfile.ZipFile(uploaded_zip, 'r') as z:
+                # Nombres de columnas esperados para estandarizar los datos
+                cols_vias = ['Vial', 'Levantamiento (m)']
+                cols_interf = ['Subcampo', 'Interferencia', 'Tensión', 'Localización', 'Georradar', 'Levantamiento']
+
+                # Procesar Cuadrantes 1 y 4
+                for i in [1, 4]:
+                    filename = f'cuadrante_{i}.csv'
+                    if filename in z.namelist():
+                        with z.open(filename) as f:
+                            df = pd.read_csv(f, sep=';')
+                            if len(df.columns) == len(cols_vias):
+                                df.columns = cols_vias
+                                st.session_state[f'df_q{i}'] = df
+                            else:
+                                st.warning(f"El archivo '{filename}' tiene un formato inesperado y fue omitido.")
+                    
+                # Procesar Cuadrantes 2 y 3
+                for i in [2, 3]:
+                    filename = f'cuadrante_{i}.csv'
+                    if filename in z.namelist():
+                        with z.open(filename) as f:
+                            df = pd.read_csv(f, sep=';')
+                            if len(df.columns) == len(cols_interf):
+                                df.columns = cols_interf
+                                st.session_state[f'df_q{i}'] = df
+                            else:
+                                st.warning(f"El archivo '{filename}' tiene un formato inesperado y fue omitido.")
+            st.success("¡Datos restaurados!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Ocurrió un error al leer el archivo .zip: {e}")
 
 # --- TÍTULO PRINCIPAL ---
 st.title("🚧 Gestor de Avance de Topografía")
@@ -103,13 +130,13 @@ st.header("Dashboard de Avance General")
 
 # Lógica de cálculo
 total_vias_objetivo = 31588
-df_q1_numeric = pd.to_numeric(st.session_state.df_q1['Levantamiento (m)'], errors='coerce').fillna(0)
-df_q4_numeric = pd.to_numeric(st.session_state.df_q4['Levantamiento (m)'], errors='coerce').fillna(0)
+df_q1_numeric = pd.to_numeric(st.session_state.df_q1.get('Levantamiento (m)'), errors='coerce').fillna(0)
+df_q4_numeric = pd.to_numeric(st.session_state.df_q4.get('Levantamiento (m)'), errors='coerce').fillna(0)
 vias_levantadas = df_q1_numeric.sum() + df_q4_numeric.sum()
 porcentaje_vias = (vias_levantadas / total_vias_objetivo) if total_vias_objetivo > 0 else 0
 
 total_interferencias = len(st.session_state.df_q2) + len(st.session_state.df_q3)
-interferencias_completadas = st.session_state.df_q2['Levantamiento'].notna().sum() + st.session_state.df_q3['Levantamiento'].notna().sum()
+interferencias_completadas = st.session_state.df_q2.get('Levantamiento', pd.Series(dtype=str)).notna().sum() + st.session_state.df_q3.get('Levantamiento', pd.Series(dtype=str)).notna().sum()
 porcentaje_interferencias = (interferencias_completadas / total_interferencias) if total_interferencias > 0 else 0
 
 if vias_levantadas == 0 and total_interferencias == 0:
@@ -121,9 +148,16 @@ else:
 
     if total_interferencias > 0:
         df_interferencias_total = pd.concat([st.session_state.df_q2, st.session_state.df_q3])
-        tension_counts = df_interferencias_total['Tensión'].value_counts().reset_index()
-        fig_pie = px.pie(tension_counts, names='Tensión', values='count', title='Distribución por Tensión', color_discrete_sequence=px.colors.qualitative.Pastel)
-        col3.plotly_chart(fig_pie, use_container_width=True)
+        
+        # VERIFICACIÓN: Revisa si la columna 'Tensión' existe antes de crear el gráfico
+        if 'Tensión' in df_interferencias_total.columns and not df_interferencias_total['Tensión'].dropna().empty:
+            tension_counts = df_interferencias_total['Tensión'].value_counts().reset_index()
+            tension_counts.columns = ['Tensión', 'count']
+            
+            fig_pie = px.pie(tension_counts, names='Tensión', values='count', title='Distribución por Tensión', color_discrete_sequence=px.colors.qualitative.Pastel)
+            col3.plotly_chart(fig_pie, use_container_width=True)
+        else:
+            col3.info("No hay datos de 'Tensión' para mostrar el gráfico circular.")
 
 st.markdown("---")
 st.header("Gestión de Datos por Cuadrante")
@@ -169,7 +203,6 @@ def render_interferencias_tab(tab, df_key, cuadrante_num):
 
         st.subheader(f"Datos Registrados - Cuadrante {cuadrante_num}")
         st.data_editor(st.session_state[df_key], num_rows="dynamic", use_container_width=True, key=f"editor_q{cuadrante_num}")
-
 
 # Renderizar cada pestaña
 render_vias_tab(tab1, 'df_q1', 1)
