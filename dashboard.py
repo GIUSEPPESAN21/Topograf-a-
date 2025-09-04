@@ -139,7 +139,7 @@ df_interferencias = pd.concat([
     st.session_state.df_q3[st.session_state.df_q3['Tipo'] == 'Interferencia']
 ])
 localizacion_completadas = safe_sum_numeric_column(df_interferencias, 'Localización')
-georradar_completadas = safe_sum_numeric_column(df_interferencias, 'Georradar')
+georradar_completadas = safe_sum_numeric_column(df_interferencias, 'Georadar')
 levantamiento_completadas = safe_sum_numeric_column(df_interferencias, 'Levantamiento')
 
 interf_q2 = safe_sum_numeric_column(st.session_state.df_q2[st.session_state.df_q2['Tipo'] == 'Interferencia'], 'Levantamiento')
