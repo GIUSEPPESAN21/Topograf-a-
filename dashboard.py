@@ -248,10 +248,12 @@ with c3:
         
         chart_cols = st.columns(2)
         with chart_cols[0]:
-            st.plotly_chart(create_donut_chart(vias_q3, vias_obj_q3, "Vías y Drenajes"), use_container_width=True)
+            # FIX: Added a space to the title to make it unique from Quadrant 2's chart
+            st.plotly_chart(create_donut_chart(vias_q3, vias_obj_q3, "Vías y Drenajes "), use_container_width=True)
             st.info(f"**Vías:** `{int(vias_q3)} / {vias_obj_q3} m`")
         with chart_cols[1]:
-            st.plotly_chart(create_donut_chart(levantamiento_q3, interf_obj_q3, "Interferencias"), use_container_width=True)
+            # FIX: Added a space to the title to make it unique
+            st.plotly_chart(create_donut_chart(levantamiento_q3, interf_obj_q3, "Interferencias "), use_container_width=True)
             st.info(f"**Interferencias:** `{int(levantamiento_q3)} / {interf_obj_q3}`")
 
         with st.form(key="form_via_q3"):
